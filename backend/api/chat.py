@@ -91,6 +91,8 @@ async def send_message(req: ChatRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/chat/stream")
 async def stream_message(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     """Send a message and stream the response via SSE."""
+    import logging
+    logging.warning(f"INCOMING REQUEST: message={req.message}, model={req.model}, conversation={req.conversation_id}")
     model = _resolve_model(req.model)
 
     conv = await _get_or_create_conversation(db, req.conversation_id, model, req.provider)
@@ -102,20 +104,25 @@ async def stream_message(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     messages = await _build_messages(db, conv.id)
 
     async def event_stream():
-        full_content = ""
-        async for chunk in _client.stream(
-            messages=messages,
-            model=model,
-            conversation_id=str(conv.id),
-        ):
-            full_content += chunk
-            yield f"data: {chunk}\n\n"
+        try:
+            full_content = ""
+            async for chunk in _client.stream(
+                messages=messages,
+                model=model,
+                conversation_id=str(conv.id),
+            ):
+                full_content += chunk
+                yield f"data: {chunk}\n\n"
 
-        # Save the complete assistant message after streaming ends
-        await crud.add_message(db, conv.id, role="assistant", content=full_content)
+            # Save the complete assistant message after streaming ends
+            await crud.add_message(db, conv.id, role="assistant", content=full_content)
 
-        # Send done signal
-        yield f"data: [DONE]\n\n"
+            # Send done signal
+            yield f"data: [DONE]\n\n"
+        except Exception as e:
+            import logging
+            logging.error(f"Streaming error: {e}", exc_info=True)
+            yield f"data: [ERROR] {str(e)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -132,4 +139,22 @@ async def list_available_models():
         available["google"] = ["gemini/gemini-2.5-flash", "gemini/gemini-2.5-pro"]
     if settings.deepseek_api_key:
         available["deepseek"] = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"]
+    if settings.openrouter_api_key:
+        try:
+            import httpx
+            # Fetch dynamically to support ANY openrouter model
+            async with httpx.AsyncClient() as client:
+                resp = await client.get("https://openrouter.ai/api/v1/models", timeout=5.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Filter for some popular or free models if we want, or just return all of them
+                    # To not overwhelm the UI, let's grab a healthy selection of good models including free ones
+                    models = [f"openrouter/{m['id']}" for m in data.get("data", [])]
+                    # We will just take the top 50 so the dropdown isn't 500 items long
+                    available["openrouter"] = models[:100]
+                else:
+                    available["openrouter"] = ["openrouter/anthropic/claude-sonnet-4.6", "openrouter/deepseek/deepseek-v4-flash:free", "openrouter/openai/gpt-4o"]
+        except Exception:
+            available["openrouter"] = ["openrouter/anthropic/claude-sonnet-4.6", "openrouter/deepseek/deepseek-v4-flash:free", "openrouter/openai/gpt-4o"]
+            
     return {"providers": available}

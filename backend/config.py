@@ -14,10 +14,11 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
 
     # --- Default LLM Settings ---
-    default_model: str = "gpt-4.1"
-    default_provider: str = "openai"
+    default_model: str = "openrouter/anthropic/claude-sonnet-4.6"
+    default_provider: str = "openrouter"
 
     # --- Database ---
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/inference_logger"
@@ -50,9 +51,19 @@ class Settings(BaseSettings):
             providers.append("google")
         if self.deepseek_api_key:
             providers.append("deepseek")
+        if self.openrouter_api_key:
+            providers.append("openrouter")
         return providers
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()
+
+# Sync to os.environ for litellm
+import os
+if settings.openai_api_key: os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+if settings.anthropic_api_key: os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+if settings.google_api_key: os.environ["GEMINI_API_KEY"] = settings.google_api_key
+if settings.deepseek_api_key: os.environ["DEEPSEEK_API_KEY"] = settings.deepseek_api_key
+if settings.openrouter_api_key: os.environ["OPENROUTER_API_KEY"] = settings.openrouter_api_key

@@ -16,6 +16,7 @@ from backend.sdk.models import InferenceLog, InferenceResult
 from backend.sdk.logger import LogPublisher
 from backend.sdk.pii import PIIRedactor
 from backend.sdk.metadata import extract_provider
+from backend.config import settings
 
 
 class InferenceClient:
@@ -24,6 +25,14 @@ class InferenceClient:
     def __init__(self, publisher: Optional[LogPublisher] = None, redactor: Optional[PIIRedactor] = None):
         self.publisher = publisher or LogPublisher()
         self.redactor = redactor or PIIRedactor()
+
+    def _get_api_key(self, provider: str) -> Optional[str]:
+        if provider == "openai": return settings.openai_api_key
+        if provider == "anthropic": return settings.anthropic_api_key
+        if provider == "google": return settings.google_api_key
+        if provider == "deepseek": return settings.deepseek_api_key
+        if provider == "openrouter": return settings.openrouter_api_key
+        return None
 
     async def complete(
         self,
@@ -56,7 +65,8 @@ class InferenceClient:
         )
 
         try:
-            response = await litellm.acompletion(model=model, messages=messages, **kwargs)
+            api_key = self._get_api_key(log.provider)
+            response = await litellm.acompletion(model=model, messages=messages, api_key=api_key, **kwargs)
             latency_ms = (time.monotonic() - start) * 1000
 
             content = response.choices[0].message.content or ""
@@ -114,8 +124,9 @@ class InferenceClient:
         )
 
         try:
+            api_key = self._get_api_key(log.provider)
             response = await litellm.acompletion(
-                model=model, messages=messages, stream=True, **kwargs
+                model=model, messages=messages, stream=True, api_key=api_key, **kwargs
             )
 
             async for chunk in response:

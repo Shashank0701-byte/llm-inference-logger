@@ -16,7 +16,13 @@ export default function ChatPage() {
 
   useEffect(() => {
     getModels()
-      .then((data) => setProviders(data.providers))
+      .then((data) => {
+        setProviders(data.providers);
+        const all = Object.values(data.providers).flat();
+        if (all.length > 0 && !all.includes("gpt-4.1")) {
+          setModel(all[0] as string);
+        }
+      })
       .catch(() => {});
   }, []);
 
